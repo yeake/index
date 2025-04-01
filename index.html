@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作业地图</title>
+    <!-- 加载 OpenLayers 的 CSS 和 JS -->
+    <link rel="stylesheet" href="ol.css">
+    <script src="ol.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* 设置地图容器样式 */
+        #map {
+            width: 100%;
+            height: 100vh; /* 全屏显示 */
+        }
+    </style>
+</head>
+<body onLoad="onLoad()">
+<div id="map"></div>
+<script>
+    // 天地图 API 密钥（替换为你自己的密钥）
+    const apiKey = '981847acd025d9fa8a3d2dc115efee5c';
+    const maxZoom = 18;
+    const minZoom = 0;
+    const defaultZoom = 16
+    const fitZoom = 18;
+    const surpassMaxZoom = 24;
+    const DEFAULT_LONGITUDE = 119.4179451
+    const DEFAULT_LATITUDE = 36.50364921
+
+    const defaultStrokeStyle = {
+        color: 'rgba(0,0,255,1)',
+        width: 1
+    };
+
+    const defaultPolygonStrokeStyle = {
+        color: 'rgba(255,0,0,1)',
+        width: 1
+    };
+
+    const defaultPolygonFitStyle = {color: 'rgba(255,0,0,0)'};
+
+    // 1. 创建天地图卫星影像图层
+    const tiandituSatellite = new ol.layer.Tile({
+        source: new ol.source.XYZ({
+            url: `http://t{0-7}.tianditu.gov.cn/DataServer?T=img_w&x={x}&y={y}&l={z}&tk=${apiKey}`,
+            crossOrigin: 'anonymous', // 允许跨域请求地图资源
+            tileSize: 256, // 每个瓦片的像素大小（标准为256x256）
+            maxZoom: maxZoom, // 最大缩放级别限制
+            tilePixelRatio: window.devicePixelRatio || 1,  // 适配高清屏, // 瓦片像素比例（用于高清屏适配）
+            cacheSize: 512,
+        }),
+        visible: true // 默认显示
+    });
+
+    // 2.1 创建透明矢量图层，用于绘制线条
+    const lineLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(),
+        style: new ol.style.Style({
+            stroke: new ol.style.Stroke(defaultStrokeStyle)
+        })
+    });
+    // 2.2 创建透明矢量图层，用于绘制多边形
+    const polygonLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(), // 空数据源
+        style: new ol.style.Style({
+            stroke: new ol.style.Stroke(defaultPolygonStrokeStyle),
+            fill: new ol.style.Fill(defaultPolygonFitStyle)
+        })
+    });
+    // 2.3 创建矢量图层，用于绘制标记点
+    const markerLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(),
+        style: new ol.style.Style({
+            image: new ol.style.Icon({
+                src: 'http://47.101.44.80:19300/statics/icons/map/map_icon.jpg',
+                scale: 0.03125,// 16/512 = 0.03125
+                anchor: [0.5, 0.5], // 图标锚点位置（中心）
+                crossOrigin: 'anonymous',  // 添加跨域标识
+            })
+        })
+    });
+    // 3. 初始化地图
+    const map = new ol.Map({
+        target: 'map', // 地图容器的 ID
+        // 加载天地图和矢量图层
+        layers: [
+            tiandituSatellite,
+            // 添加透明底图防止白屏
+            new ol.layer.Vector({
+                source: new ol.source.Vector(),
+                opacity: 0.01
+            }),
+            lineLayer,
+            polygonLayer,
+            markerLayer
+        ],
+        controls: [], // 关键：设置为空数组以禁用所有默认控件
+        view: new ol.View({
+            center: ol.proj.fromLonLat([DEFAULT_LONGITUDE, DEFAULT_LATITUDE]), // 初始中心点
+            zoom: defaultZoom,// 当前缩放等级
+            maxZoom: surpassMaxZoom, // 设置更高的最大缩放级别，用于像素级放大
+            enableRotation: false, // 禁用旋转功能,
+            constrainResolution: true,  // 强制整数级别缩放，避免模糊
+            zoomDuration: 250,  // 延长缩放动画时间
+            easing: ol.easing.easeOut  // 缓动函数
+        })
+    });
+
+    // 9. 监听地图的 zoom 事件
+    map.on('moveend', function () {
+        const currentZoom = map.getView().getZoom();
+        if (currentZoom >= maxZoom) {
+            // 如果当前缩放级别超过瓦片的最大级别，调整瓦片的显示分辨率
+            const tileSource = tiandituSatellite.getSource();
+            const tilePixelRatio = Math.pow(2, currentZoom - maxZoom); // 计算像素比例
+
+            // 动态调整瓦片的像素比例
+            tileSource.setTileLoadFunction(function (tile, src) {
+                const url = src.replace(/&l=\d+/, `&l=${maxZoom}`);
+                const image = tile.getImage();
+                image.src = url;
+                image.style.imageRendering = 'crisp-edges'; // 设置像素化渲染
+            });
+
+            // 设置瓦片的像素比例
+            tileSource.tilePixelRatio_ = tilePixelRatio;
+        } else {
+            // 如果当前缩放级别小于瓦片的最大级别，恢复正常的瓦片加载逻辑
+            const tileSource = tiandituSatellite.getSource();
+            tileSource.setTileLoadFunction(function (tile, src) {
+                tile.getImage().src = src;
+            });
+            tileSource.tilePixelRatio_ = 1; // 恢复默认像素比例
+        }
+    });
+
+    function onLoad() {
+        //readCsv()
+    }
+
+    /**
+     * 设置小车位置
+     */
+    function setCarPosition(param) {
+        clearCarPosition()
+        let coord = [parseFloat(param.lon), parseFloat(param.lat)]
+        addPoint(coord)
+    }
+
+    /**
+     * 归位
+     */
+    function setMapHome(param) {
+        let coord = [parseFloat(param.lon), parseFloat(param.lat)]
+        // 将经纬度转换为 OpenLayers 投影坐标
+        const center = ol.proj.fromLonLat(coord);
+        // 使用动画平滑移动到目标位置
+        map.getView().animate({
+            center: center,          // 目标中心点
+            duration: 100           // 动画时长（毫秒）
+        });
+    }
+
+    /**
+     * 设置地块路径
+     * 规划路径 和 围栏
+     */
+    function setAreaPath(param) {
+        clearOverLays()
+        // 规划路径
+        let pathList = param["pathList"]
+        // 围栏信息
+        let fenceList = param["fenceList"]
+
+        // 规划路径
+        let pathCoordinates = [];
+        // 遍历解析后的数组
+        pathList.forEach(item => {
+            if (item !== undefined) {
+                pathCoordinates.push([
+                    parseFloat(item.lon), // 经度
+                    parseFloat(item.lat)  // 纬度
+                ]);
+            }
+        });
+        // 添加线 自动调整视图
+        fitViewToFeature(addPolyline(pathCoordinates, defaultStrokeStyle))
+
+        // 围栏信息
+        let fenceCoordinates = [];
+        // 遍历解析后的数组
+        fenceList.forEach(item => {
+            if (item !== undefined) {
+                fenceCoordinates.push([
+                    parseFloat(item.lon), // 经度
+                    parseFloat(item.lat)  // 纬度
+                ]);
+            }
+        });
+        // 添加多边形 自动调整视图
+        fitViewToFeature(addPolygon(fenceCoordinates, defaultPolygonStrokeStyle, defaultPolygonFitStyle))
+    }
+
+    /**
+     * 设置单元路径 围栏、地块连接线
+     */
+    function setUnitPath(param) {
+        clearOverLays()
+        // 连接路径
+        let outerPathList = param["pathList"]
+        // 围栏信息
+        let outerFenceListList = param["fenceList"]
+
+        // 连接路径
+        outerPathList.forEach(pathList => {
+            // 规划路径
+            let pathCoordinates = [];
+            // 遍历解析后的数组
+            pathList.forEach(item => {
+                if (item !== undefined) {
+                    pathCoordinates.push([
+                        parseFloat(item.lon), // 经度
+                        parseFloat(item.lat)  // 纬度
+                    ]);
+                }
+            });
+            // 添加线 自动调整视图
+            fitViewToFeature(addPolyline(pathCoordinates, defaultStrokeStyle))
+        });
+
+        // 围栏信息
+        outerFenceListList.forEach(fenceList => {
+            // 多边形的点
+            let fenceCoordinates = [];
+            // 遍历解析后的数组
+            fenceList.forEach(item => {
+                if (item !== undefined) {
+                    fenceCoordinates.push([
+                        parseFloat(item.lon), // 经度
+                        parseFloat(item.lat)  // 纬度
+                    ]);
+                }
+            });
+            // 添加线 自动调整视图
+            fitViewToFeature(addPolygon(fenceCoordinates, defaultPolygonStrokeStyle, defaultPolygonFitStyle))
+        });
+    }
+
+    /**
+     * 添加点
+     * @param {Array} coord 经纬度坐标 [lon, lat]
+     */
+    function addPoint(coord) {
+        const feature = new ol.Feature({
+            geometry: new ol.geom.Point(ol.proj.fromLonLat(coord))
+        });
+        markerLayer.getSource().addFeature(feature);
+    }
+
+    /**
+     * 添加线
+     * @param {Array} coordinates 经纬度坐标数组，格式[[lon1, lat1], [lon2, lat2], ...]
+     * @param {Object} stroke 可选样式配置，默认蓝色线条
+     */
+    function addPolyline(coordinates, stroke = defaultStrokeStyle) {
+        try {
+            // 转换坐标格式
+            const lineString = new ol.geom.LineString(
+                coordinates.map(coord => ol.proj.fromLonLat(coord))
+            );
+            // 创建要素
+            const feature = new ol.Feature({
+                geometry: lineString
+            });
+            // 设置样式（支持动态覆盖默认样式）
+            feature.setStyle(new ol.style.Style({
+                stroke: new ol.style.Stroke(stroke)
+            }));
+            // 添加到矢量图层
+            lineLayer.getSource().addFeature(feature);
+            // 返回要素对象便于后续操作
+            return feature;
+        } catch (error) {
+            console.error('Failed to parse JSON:', error.message);
+        }
+    }
+
+    /**
+     * 添加多边形（基于OpenLayers实现）
+     * @param {Array} coordinates 经纬度坐标数组，格式[[lon1, lat1], [lon2, lat2], ...]
+     * @param stroke
+     * @param fill
+     */
+    function addPolygon(coordinates, stroke = defaultStrokeStyle, fill = defaultPolygonFitStyle,
+    ) {
+        try {
+            // 转换坐标格式
+            const polygon = new ol.geom.Polygon([
+                coordinates.map(coord => ol.proj.fromLonLat(coord))
+            ]);
+            // 创建要素
+            const feature = new ol.Feature({
+                geometry: polygon
+            });
+            // 设置样式（支持动态覆盖默认样式）
+            feature.setStyle(new ol.style.Style({
+                stroke: new ol.style.Stroke(stroke),
+                fill: new ol.style.Fill(fill)
+            }));
+            // 添加到矢量图层
+            polygonLayer.getSource().addFeature(feature);
+            // 返回要素对象便于后续操作
+            return feature;
+        } catch (error) {
+            console.error('绘制多边形失败:', error);
+        }
+    }
+
+    /**
+     * 清空小车位置
+     */
+    function clearCarPosition() {
+        // 清空 lineLayer
+        markerLayer.getSource().clear();
+    }
+
+    /**
+     * 清空地图标记
+     * 线 多边形
+     */
+    function clearOverLays() {
+        // 清空 lineLayer
+        lineLayer.getSource().clear();
+        // 清空 polygonLayer
+        polygonLayer.getSource().clear();
+    }
+
+    function readCsv() {
+        fetch('./data.csv')
+            .then(response => response.text())
+            .then(csvText => {
+                const coordinates = [];
+                csvText.split('\n').forEach(line => {
+                    if (line) {
+                        const parts = line.split(',');
+                        coordinates.push([
+                            parseFloat(parts[2]), // 经度
+                            parseFloat(parts[1])  // 纬度
+                        ]);
+                    }
+                });
+
+                // 添加线 自动调整视图
+                fitViewToFeature(addPolyline(coordinates, defaultStrokeStyle))
+            })
+            .catch(console.error);
+    }
+
+    /**
+     * 自动调整视图以适配指定几何图形
+     * @param {ol.Feature} feature - 要适配的要素
+     * @param {number} [maxZoom] - 最大缩放级别（可选）
+     * @param {Array<number>} [padding=[50,50,50,50]] - 边距（上,右,下,左）
+     */
+    function fitViewToFeature(feature, maxZoom = fitZoom, padding = [50, 50, 50, 50]) {
+        map.getView().fit(feature.getGeometry(), {
+            maxZoom: maxZoom,
+            padding: padding,
+        });
+    }
+
+</script>
+</body>
+</html>
